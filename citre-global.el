@@ -118,7 +118,7 @@ START-FILE."
       (_ (error "Invalid MODE")))
     (when case-fold (push "--ignore-case" cmd))
     ;; Global doesn't know how to expand "~", so we need to expand START-FILE.
-    (when start-file (push (concat "--nearness=" (expand-file-name start-file))
+    (when start-file (push (concat "--nearness=" （file-local-name (expand-file-name start-file))）
                            cmd))
     (setq cmd (append (nreverse cmd)
                       (list "--color=never"
