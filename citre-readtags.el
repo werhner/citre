@@ -1194,7 +1194,6 @@ value, and COMMENT is its comment info.
 
 When there's already a pseudo tag with the same name, COMMENT
 will not overwrite the original comment."
-  (setq comment (concat "/" comment "/;\""))
   (let ((default-directory (file-name-directory tagsfile)))
        (process-file "citre-readtags-write-pseudo-tag" nil nil nil (file-local-name tagsfile) name value comment)))
 
