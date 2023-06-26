@@ -1196,6 +1196,7 @@ When there's already a pseudo tag with the same name, COMMENT
 will not overwrite the original comment."
   (let ((default-directory (file-name-directory tagsfile)))
        (process-file "citre-readtags-write-pseudo-tag" nil nil nil (file-local-name tagsfile) name value comment)))
+       ;; (start-file-process-shell-command "write-pseudo" nil (format "citre-readtags-write-pseudo-tag '%s' '%s' '%s' '%s'" (file-local-name tagsfile) name value comment))))
 
 (provide 'citre-readtags)
 
