@@ -250,6 +250,110 @@ any valid actions in readtags, e.g., \"-D\", to get pseudo tags."
         (push name cmd)))
     (citre-get-output-lines (nreverse cmd))))
 
+(defun citre-readtags--get-cmd
+    (tagsfile &optional name match case-fold filter sorter action)
+  "Get cmd in TAGSFILE using readtags.
+See `citre-readtags-get-tags' to know about NAME, MATCH, CASE-FOLD,
+FILTER, and SORTER.  ACTION can be nil, to get regular tags, or
+any valid actions in readtags, e.g., \"-D\", to get pseudo tags."
+  (let* ((match (or match 'exact))
+         (extras (concat
+                  "-Ene"
+                  (pcase match
+                    ('exact "")
+                    ('prefix "p")
+                    (_ (error "Unexpected value of MATCH")))
+                  (if case-fold "i" "")))
+         (tagsfile (substring-no-properties tagsfile))
+         (name (when name (substring-no-properties name)))
+         (filter (citre-readtags--strip-text-property-in-list filter))
+         (sorter (citre-readtags--strip-text-property-in-list sorter))
+         inhibit-message
+         cmd)
+    ;; Program name
+    (push (or citre-readtags-program "readtags") cmd)
+    ;; Read from this tags file
+    (push "-t" cmd)
+    (push (file-local-name tagsfile) cmd)
+    ;; Filter expression
+    (when filter (push "-Q" cmd) (push (format "%S" filter) cmd))
+    (when sorter (push "-S" cmd) (push (format "%S" sorter) cmd))
+    ;; Extra arguments
+    (push extras cmd)
+    ;; Action
+    (if action (push action cmd)
+      (if (or (null name) (string-empty-p name))
+          (push "-l" cmd)
+        (push "-" cmd)
+        (push name cmd)))
+    (nreverse cmd)))
+
+(cl-defun citre-readtags--parse-tags
+    (tagsfile &optional name match case-fold
+              &key filter sorter
+              require optional exclude parse-all-fields)
+  (when (and optional exclude)
+    (error "OPTIONAL and EXCLUDE can't be used together"))
+  (when (cl-intersection require exclude)
+    (error "REQUIRE and EXCLUDE can't intersect"))
+  (when (cl-intersection optional exclude)
+    (error "OPTIONAL and EXCLUDE can't intersect"))
+  (let* ((optional (cl-set-difference optional require))
+         (find-field-depends
+          (lambda (field)
+            (alist-get field citre-readtags--ext-fields-dependency-alist)))
+         (ext-fields (mapcar #'car
+                             citre-readtags--ext-fields-dependency-alist))
+         (require-ext (cl-intersection require ext-fields))
+         (optional-ext (cl-intersection optional ext-fields))
+         (ext-dep (cl-delete-duplicates
+                   (apply #'append
+                          (append
+                           (mapcar find-field-depends require-ext)
+                           (mapcar find-field-depends optional-ext)))))
+         (ext-dep (cl-set-difference ext-dep require))
+         (ext-dep (cl-set-difference ext-dep optional))
+         (require (cl-delete-duplicates
+                   (cl-set-difference require ext-fields)))
+         (optional (cl-delete-duplicates
+                    (cl-set-difference optional ext-fields)))
+         (exclude (cl-delete-duplicates exclude))
+         (info (when (or require-ext optional-ext)
+                 (citre-readtags-tags-file-info tagsfile))))
+    (when (cl-intersection exclude ext-fields)
+      (error "EXCLUDE shouldn't contain extension fields"))
+    (cons (lambda (line)
+              (citre-readtags--parse-line
+               line info
+               require optional exclude
+               require-ext optional-ext ext-dep
+               parse-all-fields))
+            (citre-readtags--get-cmd
+             tagsfile name match case-fold
+             filter sorter nil))))
+
+(cl-defun citre-readtags-parse-tags
+    (tagsfile &optional name match case-fold
+              &key filter sorter
+              require optional exclude parse-all-fields)
+  (let ((nil-or-string-p (lambda (x) (or (null x) (stringp x)))))
+    (citre-readtags--error-on-arg tagsfile
+                                  #'citre-readtags--string-non-empty-p)
+    (citre-readtags--error-on-arg name nil-or-string-p))
+  (let* ((tagsfile (expand-file-name tagsfile))
+         (name- (when (memq match '(nil exact prefix)) name))
+         (match- (when (memq match '(nil exact prefix)) match))
+         (filter- (when (and name (memq match '(suffix substr regexp)))
+                    (citre-readtags-filter 'name name match case-fold)))
+         (filter- (if (and filter- filter)
+                      `(and ,filter- ,filter)
+                    (or filter- filter))))
+    (citre-readtags--parse-tags tagsfile name- match- case-fold
+                              :filter filter- :sorter sorter
+                              :require require :optional optional
+                              :exclude exclude
+                              :parse-all-fields parse-all-fields)))
+
 ;;;;; Parse tagline
 
 (defun citre-readtags--read-field-value (value)

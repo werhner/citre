@@ -367,6 +367,57 @@ completion can't be done."
      :require '(name)
      :optional '(ext-kind-full signature pattern scope typeref))))
 
+(cl-defun citre-tags-parse-tags
+    (&optional tagsfile name match
+               &key filter sorter
+               require optional exclude parse-all-fields)
+  (when (citre-executable-find (or citre-readtags-program "readtags") t)
+    (when-let ((tagsfile (or tagsfile (citre-tags-file-path))))
+      (citre-readtags-parse-tags tagsfile name match
+                               (unless (or (null match) (eq match 'exact))
+                                 (not citre-tags-completion-case-sensitive))
+                               :filter filter :sorter sorter
+                               :require require :optional optional
+                               :exclude exclude
+                               :parse-all-fields parse-all-fields))))
+(setq citre-com nil)
+(defun citre-tags-get-completions-async (&optional symbol tagsfile substr-completion)
+  (when-let* ((symbol (or symbol (citre-tags-get-symbol tagsfile)))
+              (tagsfile (or tagsfile (citre-tags-file-path)))
+              (match (if substr-completion 'substr 'prefix)))
+    (let* ((tags-cons    (citre-tags-parse-tags
+                          tagsfile symbol match
+                          :filter (or (citre-tags--get-value-in-language-alist
+                                       :completion-filter symbol)
+                                      (citre-tags-completion-default-filter symbol))
+                          :sorter (or (citre-tags--get-value-in-language-alist
+                                       :completion-sorter symbol)
+                                      citre-tags-completion-default-sorter)
+                          :require '(name)
+                          :optional '(ext-kind-full signature pattern scope typeref)))
+           (cmd (cdr tags-cons))
+           (parse-func (car tags-cons))
+           (result nil)
+           (success nil)
+           (call2 (lambda (status msg)
+                    (pcase status
+                      ('output (setq result
+                                     (nconc result (split-string msg "\n" t))))
+                      (0 (setq success t))
+                      ((and s (pred integerp))
+                       (error (format "Process %s exits %s:\n%s"
+                                      (car cmd) s msg)))
+                      ('signal nil)
+                      (s (error (format "Abnormal status of process %s:\n%s"
+                                        (car cmd) s))))
+                    (if (eq status 0)
+                        (setq citre-com (mapcar (lambda (line) (funcall parse-func line)) result))))))
+      (citre-make-async-process cmd call2))))
+
+(citre-tags-get-completions "zN" "/Users/werhner/.emacs.d/tags")gi
+(citre-tags-get-completions-async "zNa" "/Users/werhner/.emacs.d/tags")
+;(message "bb;%S" citre-com)
+
 ;;;;; Finding definitions
 
 (defun citre-tags-definition-default-filter (symbol)
